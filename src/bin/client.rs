@@ -31,11 +31,18 @@ struct App {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let mut stream = TcpStream::connect((args.address.as_str(), args.port)).await?;
+    let mut network_stream = TcpStream::connect((args.address.as_str(), args.port)).await?;
+
+    // throw away hi message used for telnet connections to server
+    if let Err(e) = read_from_stream(&mut network_stream).await {
+        eprintln!("Failed to initialize connection to server: {}", e);
+        std::process::exit(1);
+    }
+    write_to_stream(&mut network_stream, format!("{}\n", args.name)).await;
     println!("Connected to server");
-    read_from_stream(&mut stream).await; // throw away hi message
-    write_to_stream(&mut stream, format!("{}\n", args.name)).await;
+
     let (tx, mut rx) = mpsc::channel(64);
+
     let mut app = App {
         name: args.name,
         messages: vec![],
@@ -43,16 +50,12 @@ async fn main() -> Result<()> {
         tx,
     };
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
+    let mut terminal = prepare_terminal()?;
     let mut event_stream = EventStream::new();
+
     loop {
         select! {
-            msg = read_from_stream(&mut stream) => {
+            msg = read_from_stream(&mut network_stream) => {
                 match msg {
                     Ok(msg) => {
                         let x = msg.split(':').collect::<Vec<&str>>();
@@ -68,7 +71,7 @@ async fn main() -> Result<()> {
                 }
             },
             Some(msg) = rx.recv() => {
-                write_to_stream(&mut stream, format!("{}\n", msg.msg)).await;
+                write_to_stream(&mut network_stream, format!("{}\n", msg.msg)).await;
             }
             a = handle_ui(&mut app, &mut terminal, &mut event_stream) => {
                 if let AppEvent::Quit = a? {
@@ -79,6 +82,14 @@ async fn main() -> Result<()> {
     }
     restore_terminal(terminal)?;
     Ok(())
+}
+
+fn prepare_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    Terminal::new(backend)
 }
 
 fn restore_terminal(mut terminal: Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
