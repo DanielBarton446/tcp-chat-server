@@ -16,9 +16,16 @@ use tokio::sync::broadcast;
 
 type Sender = broadcast::Sender<Message>;
 
+const SERVER_ID: usize = usize::MAX;
+
 #[allow(unused, clippy::empty_loop)]
 async fn process(mut stream: TcpStream, id: usize, name: String, tx: Sender) {
     let mut rx = tx.subscribe();
+    tx.send(Message {
+        name: name.clone(),
+        id: SERVER_ID,
+        msg: String::from("Connected"),
+    });
 
     loop {
         select!(
@@ -29,12 +36,20 @@ async fn process(mut stream: TcpStream, id: usize, name: String, tx: Sender) {
                 }
             }
             msg = read_from_stream(&mut stream) => {
-                tx.send(Message { id, msg, name: name.clone()}).unwrap();
+                match msg {
+                    Ok(msg) => {
+                        tx.send(Message { id, msg, name: name.clone()}).unwrap();
+                    },
+                    Err(e) => {
+                        tx.send(Message { name: name.clone(), id: SERVER_ID, msg: String::from("Client disconnected") });
+                        eprintln!("Client Disconnected: {}", name);
+                        break;
+                    }
+                }
             }
         );
     }
 }
-
 
 #[tokio::main]
 async fn main() {
@@ -50,9 +65,12 @@ async fn main() {
 
         tokio::spawn(async move {
             write_to_stream(&mut stream, b"What is your name: \n").await;
-            let name = read_from_stream(&mut stream).await;
-            dbg!(&name);
-            process(stream, id, name, tx1).await;
+            if let Ok(name) = read_from_stream(&mut stream).await {
+                eprintln!("Client Connected: {}", name);
+                process(stream, id, name, tx1).await;
+            } else {
+                eprintln!("A client failed to connect");
+            }
         });
         id += 1;
     }
