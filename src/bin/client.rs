@@ -110,7 +110,7 @@ async fn handle_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     event_stream: &mut EventStream,
 ) -> Result<AppEvent> {
-    terminal.draw(|f| ui(f, &app))?;
+    terminal.draw(|f| ui(f, app))?;
 
     if let Some(Ok(Event::Key(k))) = event_stream.next().await {
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('d') {
