@@ -1,4 +1,6 @@
-use tokio::io::*;
+//! To run the server do `cargo run --bin server`
+use super_mega_chatroom::*;
+
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::broadcast;
@@ -11,13 +13,6 @@ use tokio::sync::broadcast;
 * [] fix the multithreading issue with arc<mutex<something>>
 *
 */
-
-#[derive(Clone, Debug)]
-struct Message {
-    id: usize,
-    name: String,
-    msg: String,
-}
 
 type Sender = broadcast::Sender<Message>;
 
@@ -40,31 +35,12 @@ async fn process(mut stream: TcpStream, id: usize, name: String, tx: Sender) {
     }
 }
 
-async fn read_from_stream(stream: &mut TcpStream) -> String {
-    let mut buf: Vec<u8> = Vec::new();
-    loop {
-        let b = stream.read_u8().await.unwrap();
-        if b == b'\n' {
-            break;
-        }
-        buf.push(b);
-    }
-    let s: String = buf.into_iter().map(|b| b as char).collect();
-    s.trim().to_string()
-}
-
-async fn write_to_stream(stream: &mut TcpStream, msg: &[u8]) {
-    stream
-        .write_all(msg)
-        .await
-        .expect("failed to write git gud");
-}
 
 #[tokio::main]
 async fn main() {
     println!("Hello, world!");
 
-    let listener = TcpListener::bind("192.168.10.3:7878").await.unwrap();
+    let listener = TcpListener::bind("localhost:7878").await.unwrap();
     let (tx, mut _rx1) = broadcast::channel::<Message>(16);
     let mut id = 0;
 
@@ -73,8 +49,9 @@ async fn main() {
         let tx1 = tx.clone();
 
         tokio::spawn(async move {
-            write_to_stream(&mut stream, b"What is your name: ").await;
+            write_to_stream(&mut stream, b"What is your name: \n").await;
             let name = read_from_stream(&mut stream).await;
+            dbg!(&name);
             process(stream, id, name, tx1).await;
         });
         id += 1;
