@@ -11,8 +11,8 @@ use tokio::sync::broadcast;
 *
 * Next Steps:
 * [x] read from streams and echo back
-* [] Try to add multithreading with spawn -- this is going to fail at first
-* [] fix the multithreading issue with arc<mutex<something>>
+* [x] Try to add multithreading with spawn -- this is going to fail at first
+* [x] fix the multithreading issue with arc<mutex<something>>
 *
 */
 
