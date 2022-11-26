@@ -137,8 +137,12 @@ async fn handle_ui<B: Backend>(
                 app.input.pop();
             }
             KeyCode::Enter => {
-                let mut msg = Message { name: app.name.clone(), msg: app.input.clone(), id: 0, };
-                if let Err(e) = app.tx .send(msg.clone()) .await {
+                let mut msg = Message {
+                    name: app.name.clone(),
+                    msg: app.input.clone(),
+                    id: 0,
+                };
+                if let Err(e) = app.tx.send(msg.clone()).await {
                     msg.msg = format!("Failed to send: '{}'. Error {}", msg.msg, e);
                 }
 

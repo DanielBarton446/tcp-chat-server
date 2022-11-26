@@ -100,7 +100,7 @@ async fn main() {
         tokio::spawn(async move {
             if let Err(e) = write_to_stream(&mut stream, b"What is your name: \n").await {
                 eprintln!("Connection to client dropped: {}", e);
-                return
+                return;
             }
             if let Ok(name) = read_from_stream(&mut stream).await {
                 eprintln!("Client Connected: {}", name);
