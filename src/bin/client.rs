@@ -1,4 +1,5 @@
-//! Run this binary with `cargo run --bin client`
+//! Run this binary with `cargo run --bin client --address <address> --port <port> --name <name>`
+//! or from the binary `./client --address <address> --port <port> --name <name>`
 use clap::Parser;
 use crossterm::{event::*, terminal::*, *};
 use futures::StreamExt;
@@ -12,9 +13,9 @@ use tui::{backend::*, layout::*, widgets::*, *};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "localhost")]
     address: String,
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = 7878)]
     port: u16,
     #[arg(short, long)]
     name: String,
@@ -38,8 +39,13 @@ async fn main() -> Result<()> {
         eprintln!("Failed to initialize connection to server: {}", e);
         std::process::exit(1);
     }
-    write_to_stream(&mut network_stream, format!("{}\n", args.name)).await;
     println!("Connected to server");
+
+    // Send name to server
+    if let Err(e) = write_to_stream(&mut network_stream, format!("{}\n", args.name)).await {
+        eprintln!("Failed to initialize connection with server: {}", e);
+        std::process::exit(1);
+    }
 
     let (tx, mut rx) = mpsc::channel(64);
 
@@ -71,7 +77,11 @@ async fn main() -> Result<()> {
                 }
             },
             Some(msg) = rx.recv() => {
-                write_to_stream(&mut network_stream, format!("{}\n", msg.msg)).await;
+                if let Err(e) = write_to_stream(&mut network_stream, format!("{}\n", msg.msg)).await {
+                    restore_terminal(terminal)?;
+                    eprintln!("Disconnected from server: {}", e);
+                    std::process::exit(1);
+                }
             }
             a = handle_ui(&mut app, &mut terminal, &mut event_stream) => {
                 if let AppEvent::Quit = a? {
@@ -127,14 +137,11 @@ async fn handle_ui<B: Backend>(
                 app.input.pop();
             }
             KeyCode::Enter => {
-                app.tx
-                    .send(Message {
-                        name: app.name.clone(),
-                        msg: app.input.clone(),
-                        id: 0,
-                    })
-                    .await
-                    .expect("Message failed to transmit");
+                let mut msg = Message { name: app.name.clone(), msg: app.input.clone(), id: 0, };
+                if let Err(e) = app.tx .send(msg.clone()) .await {
+                    msg.msg = format!("Failed to send: '{}'. Error {}", msg.msg, e);
+                }
+
                 app.messages.push(Message {
                     name: app.name.clone(),
                     msg: app.input.clone(),

@@ -1,6 +1,8 @@
-//! To run the server do `cargo run --bin server`
+//! To run the server do `cargo run --bin server -- -a <address> -p <port>`
+//! Or from the binary `./server -a <address> -p <port>`
 use super_mega_chatroom::*;
 
+use clap::Parser;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::broadcast;
@@ -38,7 +40,10 @@ async fn process(mut stream: TcpStream, id: usize, name: String, tx: Sender) {
             msg = read_from_stream(&mut stream) => {
                 match msg {
                     Ok(msg) => {
-                        tx.send(Message { id, msg, name: name.clone()}).unwrap();
+                        let msg = Message { id, msg, name: name.clone()};
+                        if let Err(e) = tx.send(msg.clone()) {
+                            eprintln!("Failed to propogate message to other clients: {:?}", msg);
+                        }
                     },
                     Err(e) => {
                         tx.send(Message { name: name.clone(), id: SERVER_ID, msg: String::from("Client disconnected") });
@@ -51,20 +56,52 @@ async fn process(mut stream: TcpStream, id: usize, name: String, tx: Sender) {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value = "localhost")]
+    address: String,
+    #[arg(short, long, default_value_t = 7878)]
+    port: u16,
+}
+
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
+    let args = Args::parse();
 
-    let listener = TcpListener::bind("localhost:7878").await.unwrap();
+    let listener = match TcpListener::bind((args.address.as_str(), args.port)).await {
+        Err(e) => {
+            eprintln!(
+                "Failed to bind to {}:{}, Error Message: {}",
+                args.address, args.port, e
+            );
+            std::process::exit(1);
+        }
+        Ok(l) => l,
+    };
+    eprintln!(
+        "Listening for connections on {}:{}",
+        args.address, args.port
+    );
+
     let (tx, mut _rx1) = broadcast::channel::<Message>(16);
     let mut id = 0;
 
     loop {
-        let (mut stream, _) = listener.accept().await.unwrap();
+        let (mut stream, _) = match listener.accept().await {
+            Ok(x) => x,
+            Err(e) => {
+                eprintln!("Failed to accept client connection: {}", e);
+                continue;
+            }
+        };
         let tx1 = tx.clone();
 
         tokio::spawn(async move {
-            write_to_stream(&mut stream, b"What is your name: \n").await;
+            if let Err(e) = write_to_stream(&mut stream, b"What is your name: \n").await {
+                eprintln!("Connection to client dropped: {}", e);
+                return
+            }
             if let Ok(name) = read_from_stream(&mut stream).await {
                 eprintln!("Client Connected: {}", name);
                 process(stream, id, name, tx1).await;

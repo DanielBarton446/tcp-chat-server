@@ -14,11 +14,10 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<String> {
     Ok(s.trim().to_string())
 }
 
-pub async fn write_to_stream<B: AsRef<[u8]>>(stream: &mut TcpStream, msg: B) {
+pub async fn write_to_stream<B: AsRef<[u8]>>(stream: &mut TcpStream, msg: B) -> Result<()> {
     stream
         .write_all(msg.as_ref())
         .await
-        .expect("failed to write git gud");
 }
 
 #[derive(Clone, Debug)]
