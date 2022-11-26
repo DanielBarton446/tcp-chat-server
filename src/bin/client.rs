@@ -6,7 +6,6 @@ use futures::StreamExt;
 use std::io;
 use super_mega_chatroom::*;
 use tokio::net::*;
-use tokio::sync::mpsc;
 use tokio::*;
 use tui::{backend::*, layout::*, widgets::*, *};
 
@@ -25,7 +24,6 @@ struct App {
     name: String,
     messages: Vec<Message>,
     input: String,
-    tx: mpsc::Sender<Message>,
 }
 
 #[tokio::main]
@@ -47,13 +45,10 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let (tx, mut rx) = mpsc::channel(64);
-
     let mut app = App {
         name: args.name,
         messages: vec![],
         input: String::new(),
-        tx,
     };
 
     let mut terminal = prepare_terminal()?;
@@ -76,16 +71,17 @@ async fn main() -> Result<()> {
                     }
                 }
             },
-            Some(msg) = rx.recv() => {
-                if let Err(e) = write_to_stream(&mut network_stream, format!("{}\n", msg.msg)).await {
-                    restore_terminal(terminal)?;
-                    eprintln!("Disconnected from server: {}", e);
-                    std::process::exit(1);
-                }
-            }
             a = handle_ui(&mut app, &mut terminal, &mut event_stream) => {
-                if let AppEvent::Quit = a? {
-                    break
+                match a? {
+                    AppEvent::Send(msg) => {
+                        if let Err(e) = write_to_stream(&mut network_stream, format!("{}\n", msg.msg)).await {
+                            restore_terminal(terminal)?;
+                            eprintln!("Disconnected from server: {}", e);
+                            std::process::exit(1);
+                        }
+                    },
+                    AppEvent::Quit => break,
+                    AppEvent::Continue => {},
                 }
             }
         }
@@ -113,6 +109,7 @@ fn restore_terminal(mut terminal: Terminal<CrosstermBackend<io::Stdout>>) -> Res
 enum AppEvent {
     Quit,
     Continue,
+    Send(Message),
 }
 
 async fn handle_ui<B: Backend>(
@@ -137,21 +134,15 @@ async fn handle_ui<B: Backend>(
                 app.input.pop();
             }
             KeyCode::Enter => {
-                let mut msg = Message {
+                let msg = Message {
                     name: app.name.clone(),
                     msg: app.input.clone(),
                     id: 0,
                 };
-                if let Err(e) = app.tx.send(msg.clone()).await {
-                    msg.msg = format!("Failed to send: '{}'. Error {}", msg.msg, e);
-                }
 
-                app.messages.push(Message {
-                    name: app.name.clone(),
-                    msg: app.input.clone(),
-                    id: 0,
-                });
+                app.messages.push(msg.clone());
                 app.input.clear();
+                return Ok(AppEvent::Send(msg));
             }
             _ => {}
         }
