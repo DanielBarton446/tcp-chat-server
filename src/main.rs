@@ -64,7 +64,7 @@ async fn write_to_stream(stream: &mut TcpStream, msg: &[u8]) {
 async fn main() {
     println!("Hello, world!");
 
-    let listener = TcpListener::bind("192.168.10.3:7878").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:7878").await.unwrap();
     let (tx, mut _rx1) = broadcast::channel::<Message>(16);
     let mut id = 0;
 
